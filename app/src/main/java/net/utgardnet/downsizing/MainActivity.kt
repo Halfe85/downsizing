@@ -201,7 +201,7 @@ private fun TodayPanel(
             (it + data.manualCaloriesOut).toDouble()
         }
         ValueRow("Food logged", if (intakeAvailable) data.caloriesIn.toString() + " kcal" else "No meals yet")
-        ValueRow("Total daily expenditure", outgoing?.toInt()?.toString()?.plus(" kcal") ?: "Not available")
+        ValueRow(if (health.totalBurnKcal != null) "Energy burned so far" else "Estimated daily burn", outgoing?.toInt()?.toString()?.plus(" kcal") ?: "Not available")
         if (outgoing != null && intakeAvailable) {
             val balance = data.caloriesIn - outgoing.toInt()
             ValueRow("Estimated net balance", (if (balance > 0) "+" else "") + balance + " kcal")
@@ -258,7 +258,7 @@ private fun FoodPanel(
             kcal.toIntOrNull()?.takeIf { it in 0..10000 }?.let {
                 if (name.isNotBlank()) { onAdd(name, it); name = ""; kcal = "" }
             }
-        }, enabled = name.isNotBlank() && kcal.toIntOrNull() in 0..10000) { Text("Add food") }
+        }, enabled = name.isNotBlank() && (kcal.toIntOrNull()?.let { it in 0..10000 } == true)) { Text("Add food") }
     }
     Section("Today's food • " + data.caloriesIn + " kcal") {
         if (data.foods.isEmpty()) Text("Nothing logged. Later we will add the searchable Norwegian food catalog.")
@@ -368,7 +368,7 @@ private fun SettingsPanel(
     var estimate by rememberSaveable { mutableStateOf("") }
     Text("Settings and privacy", style = MaterialTheme.typography.titleLarge)
     Section("Energy estimates") {
-        Text("Daily estimated total calories burned: " +
+        Text("Baseline calories burned (excludes additional logged exercise): " +
             if (dailyBurn > 0) dailyBurn.toString() + " kcal" else "not set")
         Text("Used only when Health Connect doesn't supply total calories burned. " +
             "Consult a qualified professional for individual energy requirements.",
