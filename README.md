@@ -18,19 +18,18 @@ Not included yet: food product lookup, downloadable SQLite food catalog, barcode
 
 ## Build and test
 
-Use Android Studio (JDK 17 and Android SDK API 36) and Gradle 8.13. The repository currently has no committed Gradle wrapper JAR; to create one from a locally installed Gradle run:
+Use JDK 17 or 21 and Android SDK API 36. The committed Gradle wrapper downloads the pinned Gradle 8.13 distribution and verifies its SHA-256 checksum. Set `ANDROID_HOME` to your SDK directory or configure `sdk.dir` in an untracked `local.properties` file.
 
 ```bash
-gradle wrapper --gradle-version 8.13
-./gradlew :app:assembleDebug
+./gradlew :app:assembleDebug :app:lintDebug
 ```
 
-Or run `gradle :app:assembleDebug` if Gradle 8.13 is already installed. GitHub Actions CI uses `gradle/actions/setup-gradle` to fetch Gradle automatically and uploads a debug APK when successful.
+The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions runs the same build and lint checks and uploads the debug APK when successful. See [the development and main workflow](docs/WORKFLOW.md) for branch promotion and later Samsung phone testing.
 
 To configure a release build with your own Google AdMob identifiers:
 
 ```bash
-gradle :app:assembleRelease -PadmobAppId='ca-app-pub-XXXXXXXX~YYYYYYYY' -PadmobBannerId='ca-app-pub-XXXXXXXX/ZZZZZZZZ'
+./gradlew :app:assembleRelease -PadmobAppId='ca-app-pub-XXXXXXXX~YYYYYYYY' -PadmobBannerId='ca-app-pub-XXXXXXXX/ZZZZZZZZ'
 ```
 
 Development builds without production IDs use Google's **test ad unit**. Release builds without both production IDs display no ad banner. Real ads require an approved AdMob account and a configured Privacy & messaging consent message. Never click your own live ads.
@@ -43,4 +42,4 @@ The future public food catalog must be a **second SQLite file** delivered by Git
 
 ## Release readiness
 
-This is a first development foundation; device testing, a passing build, secure export/delete, a real privacy policy, Health Connect Play declarations and an app signing setup are still required before Google Play publication. Health and weight guidance in the app is informational, not medical advice.
+This is a first development foundation. A local debug build and lint check passed on 2026-10-15 (0 lint errors, 31 warnings). Device testing, verified GitHub CI, secure export/delete, a real privacy policy, Health Connect Play declarations and release signing are still required before Google Play publication. Health and weight guidance in the app is informational, not medical advice.
