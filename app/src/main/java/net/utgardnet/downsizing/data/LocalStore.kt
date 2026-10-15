@@ -80,7 +80,7 @@ class LocalStore(context: Context) : SQLiteOpenHelper(context, "downsizing_priva
         writableDatabase.delete(table, "id=?", arrayOf(id.toString()))
     }
 
-    /** The user's own manually estimated daily total energy expenditure. 0 = unset. */
+    /** User-entered estimated daily baseline expenditure excluding additionally logged workouts. 0 = unset. */
     var dailyBurnTarget: Int
         get() = prefs.getInt("dailyBurnTarget", 0)
         set(value) { require(value in 0..10000); prefs.edit().putInt("dailyBurnTarget", value).apply() }
