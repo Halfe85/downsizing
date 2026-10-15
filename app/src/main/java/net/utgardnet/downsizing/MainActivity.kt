@@ -156,15 +156,15 @@ class MainActivity : ComponentActivity() {
                         onConnect = { if (reader.available()) permissionLauncher.launch(HealthReader.permissions) },
                         onReminder = { enable ->
                             if (enable && Build.VERSION.SDK_INT >= 33 &&
-                                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
                             ) notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             else {
                                 remindersOn = enable
                                 store.remindersEnabled = enable
-                                Reminders.setEnabled(this, enable)
+                                Reminders.setEnabled(this@MainActivity, enable)
                             }
                         },
-                        onPrivacy = { GoogleAds.showPrivacyOptions(this) })
+                        onPrivacy = { GoogleAds.showPrivacyOptions(this@MainActivity) })
                 }
             }
         }
