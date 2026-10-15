@@ -7,7 +7,7 @@ The existing VS Code workspace stays unchanged. These folders are separate Git c
 | `/home/halfe/Prosjekter/downsizing/development branch` | `feature/android-foundation` | Develop and validate changes |
 | `/home/halfe/Prosjekter/downsizing/main` | `main` | Receive validated source and build APKs |
 
-Make app changes in development first. Run `./gradlew :app:assembleDebug :app:lintDebug` there and review the results before committing. Build/lint checks do not prove behavior on a phone. Record any device testing separately.
+Make app changes in development first. Run `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` there and review the results before committing. Build/lint checks do not prove behavior on a phone. Record any device testing separately.
 
 For GitHub promotion, push the development branch, open a pull request into `main`, and require a passing Android build before merging. Pull `main` with `git pull --ff-only`, then build its APK. APKs are ignored build outputs; source code belongs on both branches. GitHub Actions publishes downloadable APK artifacts for pull requests and pushes to `main`.
 
@@ -16,7 +16,7 @@ For a local promotion before publishing, first ensure both checkouts are clean a
 ```bash
 git fetch '../development branch' feature/android-foundation
 git merge --ff-only FETCH_HEAD
-./gradlew :app:assembleDebug :app:lintDebug
+./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ```
 
 If the fast-forward is refused, review the divergence and integrate it in development before retrying. Local promotion does not update GitHub. Keep remote changes synchronized before publishing.

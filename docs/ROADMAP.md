@@ -8,12 +8,14 @@
 - [x] Consent-gated Google AdMob banner (test ad unit)
 - [x] Optional local daily reminders
 - [ ] Pass CI debug build and on-device tests
-- [ ] Onboarding, permission explanations and accessibility
+- [x] First-run profile onboarding, Norway flag, metric inputs, and system light/dark themes
+- [ ] Complete permission explanations and device accessibility checks
 - [ ] Local data export/delete flows and migration tests
 - [ ] Google Play privacy and Health apps declarations
 
 ## Phase 2 — Food catalog
-- [ ] Separate downloadable food SQLite from private data
+- [x] Separate food catalog SQLite schema from private profile and diary data
+- [ ] Downloadable food dataset and catalog update flow
 - [ ] GitHub release manifest: schema version, SHA-256, signature and compatibility
 - [ ] Atomic catalog download and replacement with rollback
 - [ ] Product data licensing audit for Norwegian/international sources

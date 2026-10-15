@@ -22,8 +22,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.utgardnet.downsizing.ads.AdMobBanner
@@ -32,6 +34,9 @@ import net.utgardnet.downsizing.data.*
 import net.utgardnet.downsizing.health.HealthReader
 import net.utgardnet.downsizing.health.HealthSummary
 import net.utgardnet.downsizing.reminders.Reminders
+import net.utgardnet.downsizing.ui.DownsizingTheme
+import net.utgardnet.downsizing.ui.OnboardingFlow
+import net.utgardnet.downsizing.ui.WelcomeBackground
 import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
@@ -44,26 +49,92 @@ class MainActivity : ComponentActivity() {
     private var dailyBurn by mutableIntStateOf(0)
     private var remindersOn by mutableStateOf(false)
     private var errorText by mutableStateOf<String?>(null)
+    private var loaded by mutableStateOf(false)
+    private var startupFailed by mutableStateOf(false)
+    private var profile by mutableStateOf<UserProfile?>(null)
+    private var savingSetup by mutableStateOf(false)
+    private var setupError by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        splash.setKeepOnScreenCondition { !loaded }
         store = LocalStore(applicationContext)
         reader = HealthReader(applicationContext)
-        goalKg = store.goalWeight
-        dailyBurn = store.dailyBurnTarget
-        remindersOn = store.remindersEnabled
-        lifecycleScope.launch {
-            refresh()
-            refreshHealth()
-        }
-        GoogleAds.requestConsentAndStart(this) { adsReady = true }
+        loadLocalData()
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme()) { DownsizingApp() }
+            DownsizingTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    when {
+                        !loaded -> WelcomeBackground()
+                        startupFailed -> Column(Modifier.safeDrawingPadding().padding(24.dp)) {
+                            Text("Unable to open your local data. Please try again.")
+                            Button(onClick = { loadLocalData() }) { Text("Retry") }
+                        }
+                        profile == null -> {
+                            WelcomeBackground()
+                            OnboardingFlow(savingSetup, setupError, ::saveSetup)
+                        }
+                        else -> {
+                            DownsizingApp()
+                            LaunchedEffect(Unit) {
+                                refreshHealth()
+                                // No profile, country, DOB, measurements or logs enter the ad API.
+                                GoogleAds.requestConsentAndStart(this@MainActivity) { adsReady = true }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun loadLocalData() {
+        loaded = false
+        startupFailed = false
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    FoodCatalog(applicationContext).use { it.writableDatabase }
+                }
+                refresh()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                startupFailed = true
+            } finally {
+                loaded = true
+            }
+        }
+    }
+
+    private fun saveSetup(details: SetupDetails) {
+        if (savingSetup) return
+        savingSetup = true
+        setupError = null
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) { store.completeSetup(details) }
+                refresh()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                setupError = "Unable to save your profile. Your entries are still here; please try again."
+            } finally {
+                savingSetup = false
+            }
         }
     }
 
     private suspend fun refresh() {
-        day = withContext(Dispatchers.IO) { store.snapshot() }
+        val local = withContext(Dispatchers.IO) {
+            LocalState(store.snapshot(), store.profile(), store.goalWeight, store.dailyBurnTarget, store.remindersEnabled)
+        }
+        day = local.day
+        goalKg = local.goal
+        dailyBurn = local.burn
+        remindersOn = local.reminders
+        profile = local.profile
     }
 
     private suspend fun refreshHealth() {
@@ -76,6 +147,8 @@ class MainActivity : ComponentActivity() {
                 withContext(Dispatchers.IO) { action() }
                 errorText = null
                 refresh()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorText = "Unable to save. Check the entered values."
             }
@@ -93,19 +166,17 @@ class MainActivity : ComponentActivity() {
             ActivityResultContracts.RequestPermission()
         ) { granted ->
             if (granted) {
-                remindersOn = true
-                store.remindersEnabled = true
-                Reminders.setEnabled(this, true)
+                write { store.remindersEnabled = true; Reminders.setEnabled(this@MainActivity, true) }
             }
         }
         Scaffold(
             topBar = {
                 Surface(tonalElevation = 3.dp) {
-                    Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column {
                             Text("Downsizing", style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Bold)
-                            Text("A healthier routine, one day at a time",
+                            Text(profile?.let { "Welcome, ${it.name}" } ?: "A healthier routine, one day at a time",
                                 style = MaterialTheme.typography.bodySmall)
                         }
                     }
@@ -149,19 +220,20 @@ class MainActivity : ComponentActivity() {
                         onDeleteActivity = { id -> write { store.deleteEntry("activities", id) } })
                     3 -> WeightPanel(day, goalKg,
                         onAdd = { kg -> write { store.addWeight(kg) } },
-                        onGoal = { kg -> goalKg = kg; store.goalWeight = kg },
+                        onGoal = { kg -> write { store.goalWeight = kg } },
                         onDelete = { id -> write { store.deleteEntry("weights", id) } })
                     else -> SettingsPanel(health, dailyBurn, remindersOn,
-                        onDailyBurn = { value -> dailyBurn = value; store.dailyBurnTarget = value },
+                        onDailyBurn = { value -> write { store.dailyBurnTarget = value } },
                         onConnect = { if (reader.available()) permissionLauncher.launch(HealthReader.permissions) },
                         onReminder = { enable ->
                             if (enable && Build.VERSION.SDK_INT >= 33 &&
                                 ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
                             ) notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             else {
-                                remindersOn = enable
-                                store.remindersEnabled = enable
-                                Reminders.setEnabled(this@MainActivity, enable)
+                                write {
+                                    store.remindersEnabled = enable
+                                    Reminders.setEnabled(this@MainActivity, enable)
+                                }
                             }
                         },
                         onPrivacy = { GoogleAds.showPrivacyOptions(this@MainActivity) })
@@ -170,6 +242,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+private data class LocalState(val day: DaySnapshot, val profile: UserProfile?, val goal: Float,
+    val burn: Int, val reminders: Boolean)
 
 @Composable
 private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {

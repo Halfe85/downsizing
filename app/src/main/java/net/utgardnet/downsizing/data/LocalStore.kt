@@ -23,7 +23,8 @@ data class DaySnapshot(
 fun todayKey(): String = LocalDate.now().toString()
 
 /** Local-only personal data. Food catalog updates MUST NOT modify this database. */
-class LocalStore(context: Context) : SQLiteOpenHelper(context, "downsizing_private.db", null, 1) {
+class LocalStore(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, 2) {
+    companion object { const val DATABASE_NAME = "downsizing_private.db" }
     private val prefs = context.getSharedPreferences("downsizing_settings", Context.MODE_PRIVATE)
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -35,10 +36,68 @@ class LocalStore(context: Context) : SQLiteOpenHelper(context, "downsizing_priva
         db.execSQL("CREATE INDEX idx_foods_day ON foods(day)")
         db.execSQL("CREATE INDEX idx_activities_day ON activities(day)")
         db.execSQL("CREATE INDEX idx_routines_day ON routines(day)")
+        createProfileAndSettings(db)
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Future migrations must preserve personal records. NEVER drop tables.
-        throw IllegalStateException("Database migration is required")
+        if (oldVersion < 2) createProfileAndSettings(db)
+    }
+
+    private fun createProfileAndSettings(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE profile (id INTEGER PRIMARY KEY CHECK(id=1),
+            country TEXT NOT NULL, name TEXT NOT NULL, date_of_birth TEXT NOT NULL,
+            height_cm REAL NOT NULL CHECK(height_cm>0))""")
+        db.execSQL("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        putSetting(db, "dailyBurnTarget", prefs.getInt("dailyBurnTarget", 0).toString())
+        putSetting(db, "goalWeight", prefs.getFloat("goalWeight", 0f).toString())
+        putSetting(db, "reminders", prefs.getBoolean("reminders", false).toString())
+    }
+
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        // The v2 migration has committed; SQLite is now the source of truth.
+        if (!db.isReadOnly) prefs.edit().remove("dailyBurnTarget").remove("goalWeight")
+            .remove("reminders").apply()
+    }
+
+    fun profile(): UserProfile? = readProfile(readableDatabase)
+
+    private fun readProfile(db: SQLiteDatabase): UserProfile? =
+        db.rawQuery("SELECT country,name,date_of_birth,height_cm FROM profile WHERE id=1", null).use { c ->
+            if (c.moveToFirst()) UserProfile(c.getString(0), c.getString(1),
+                LocalDate.parse(c.getString(2)), c.getDouble(3)) else null
+        }
+
+    /** One transaction: a completed profile, starting weight, and goal, or no change at all. */
+    fun completeSetup(details: SetupDetails) {
+        require(details.isValid())
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            if (readProfile(db) == null) {
+                db.insertOrThrow("profile", null, ContentValues().apply {
+                    put("id", 1); put("country", details.profile.country)
+                    put("name", details.profile.name.trim())
+                    put("date_of_birth", details.profile.dateOfBirth.toString())
+                    put("height_cm", details.profile.heightCm)
+                })
+                db.insertOrThrow("weights", null, ContentValues().apply {
+                    put("day", todayKey()); put("kg", details.weightKg)
+                })
+                putSetting(db, "goalWeight", details.goalKg.toString())
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    private fun setting(key: String, fallback: String): String =
+        readableDatabase.rawQuery("SELECT value FROM settings WHERE key=?", arrayOf(key)).use { c ->
+            if (c.moveToFirst()) c.getString(0) else fallback
+        }
+
+    private fun putSetting(db: SQLiteDatabase, key: String, value: String) {
+        db.execSQL("INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)", arrayOf(key, value))
     }
 
     fun addWeight(kg: Double) {
@@ -82,16 +141,16 @@ class LocalStore(context: Context) : SQLiteOpenHelper(context, "downsizing_priva
 
     /** User-entered estimated daily baseline expenditure excluding additionally logged workouts. 0 = unset. */
     var dailyBurnTarget: Int
-        get() = prefs.getInt("dailyBurnTarget", 0)
-        set(value) { require(value in 0..10000); prefs.edit().putInt("dailyBurnTarget", value).apply() }
+        get() = setting("dailyBurnTarget", "0").toInt()
+        set(value) { require(value in 0..10000); putSetting(writableDatabase, "dailyBurnTarget", value.toString()) }
 
     var goalWeight: Float
-        get() = prefs.getFloat("goalWeight", 0f)
-        set(value) { require(value == 0f || value in 10f..600f); prefs.edit().putFloat("goalWeight", value).apply() }
+        get() = setting("goalWeight", "0").toFloat()
+        set(value) { require(value == 0f || value in 10f..600f); putSetting(writableDatabase, "goalWeight", value.toString()) }
 
     var remindersEnabled: Boolean
-        get() = prefs.getBoolean("reminders", false)
-        set(value) { prefs.edit().putBoolean("reminders", value).apply() }
+        get() = setting("reminders", "false").toBooleanStrict()
+        set(value) { putSetting(writableDatabase, "reminders", value.toString()) }
 
     fun snapshot(): DaySnapshot {
         val weights = mutableListOf<WeightEntry>()
