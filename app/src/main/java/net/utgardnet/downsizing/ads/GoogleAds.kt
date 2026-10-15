@@ -30,6 +30,8 @@ object GoogleAds {
             if (!consent.canRequestAds()) return
             if (initialized.compareAndSet(false, true)) {
                 Thread {
+                    // Minimize persistent advertising linkage when using standard AdMob.
+                    MobileAds.putPublisherFirstPartyIdEnabled(false)
                     MobileAds.initialize(activity) {
                         activity.runOnUiThread { onReady() }
                     }
