@@ -61,7 +61,7 @@ fun AdMobBanner(modifier: Modifier = Modifier) {
     val view = remember {
         AdView(context).apply {
             setAdSize(AdSize.BANNER)
-            adUnitId = BuildConfig.BANNER_AD_UNIT_ID
+            adUnitId = if (BuildConfig.DEBUG) "ca-app-pub-3940256099942544/9214589741" else BuildConfig.BANNER_AD_UNIT_ID
             loadAd(AdRequest.Builder().build())
         }
     }
